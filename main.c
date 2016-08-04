@@ -1,6 +1,4 @@
 /*
- * main.c
- *
  * Created: 05.06.2016 13:59:35
  *  Author: instalator
  */ 
@@ -8,24 +6,20 @@
 #include "uart13.h"
 
 #define ADDRESS 1 // Адрес устройства
-/*вместимость приемного буфера*/
 #define SIZE_RECEIVE_BUF  14
 /*количество токенов*/
 #define AMOUNT_PAR 4
 #define TRUE   1
 #define FALSE  0
-
 char buf[SIZE_RECEIVE_BUF];
 char *argv[AMOUNT_PAR];
 uint8_t argc;
 uint8_t i = 0;
 uint8_t flag = 0;
-
 uint8_t cnt = 0;
 uint8_t R, G, B, buf_R, buf_G, buf_B;
 
-void PARS_Init(void)
-{
+void PARS_Init(void){
 	argc = 0;
 	argv[0] = buf;
 	flag = FALSE;
@@ -33,9 +27,9 @@ void PARS_Init(void)
 }
 uint8_t PARS_StrToUchar(char *s){
 	uint8_t value = 0;
-	while(*s == '0'){
+	/*while(*s == '0'){
 		s++;
-	}
+	}*/
 	while(*s){
 		value += (*s - 0x30);
 		s++;
@@ -55,8 +49,11 @@ uint8_t PARS_StrToUchar(char *s){
 				buf_R = R; //значения длительности ШИМ
 				buf_G = G;
 				buf_B = B;
-				PORTB |= (1<<PINB2) | (1<<PINB3) | (1<<PINB4); //подаем 1 на все каналы
-			}
+				//PORTB |= (1<<PINB2) | (1<<PINB3) | (1<<PINB4); //подаем 1 на все каналы
+				if (R != 0){PORTB |= (1<<PINB2);}
+					if (G != 0){PORTB |= (1<<PINB4);}
+						if (B != 0){PORTB |= (1<<PINB3);}
+			}	
 			if (cnt == buf_R) PORTB &=~(1<<PINB2); //подаем 0 на канал
 			if (cnt == buf_G) PORTB &=~(1<<PINB4); //по достижении
 			if (cnt == buf_B) PORTB &=~(1<<PINB3); //заданной длительности.
@@ -65,7 +62,6 @@ uint8_t PARS_StrToUchar(char *s){
         ISR(TIM0_COMPB_vect){
 	        if(RXPORT & (1 << RXD))			// Проверяем в каком состоянии вход RXD
 	        rxbyte |= 0x80;				// Если в 1, то пишем 1 в старший разряд rxbyte
-	        
 	        if(--rxbitcount == 0){			// Уменьшаем на 1 счетчик бит и проверяем не стал ли он нулем
 		        TIMSK0 &= ~(1 << OCIE0B);	// Если да, запрещаем прерывание по сравнению OCR0B
 		        TIFR0 |= (1 << OCF0B);		// Очищаем флаг прерывания (важно!)
@@ -132,9 +128,8 @@ int main(void) {
 	R = 0; //начальные значения
 	G = 0; //длительности ШИМ
 	B = 0; //трёх каналов
-	
 	PARS_Init();
-	uart_init();
+	uart_init(); //Инициализация UART
 	
 while (1) {
 	if (uart_recieve(&b) >= 0){
@@ -165,11 +160,10 @@ while (1) {
 				}
 			}
 			buf[i] = 0;
-			//
 			} else {
 			buf[i] = 0;
 			if (argc){
-				if (PARS_StrToUchar(argv[0]) == ADDRESS){
+				if (PARS_StrToUchar(argv[0]) == ADDRESS || PARS_StrToUchar(argv[0]) == 99){
 					R = PARS_StrToUchar(argv[1]);
 					G = PARS_StrToUchar(argv[2]);
 					B = PARS_StrToUchar(argv[3]);
