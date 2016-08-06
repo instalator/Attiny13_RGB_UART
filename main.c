@@ -3,8 +3,14 @@
  *  Author: instalator
  */ 
 #define F_CPU 9600000
+#include <avr/eeprom.h>
+#include  <avr/wdt.h>
 #include "uart13.h"
 
+#define R_ADRR 1
+#define G_ADRR 2
+#define B_ADRR 3
+#define SAVE 88
 #define ADDRESS 1 // Адрес устройства
 #define SIZE_RECEIVE_BUF  14
 /*количество токенов*/
@@ -19,26 +25,23 @@ uint8_t flag = 0;
 uint8_t cnt = 0;
 uint8_t R, G, B, buf_R, buf_G, buf_B;
 
-void PARS_Init(void){
-	argc = 0;
-	argv[0] = buf;
-	flag = FALSE;
-	i = 0;
-}
-uint8_t PARS_StrToUchar(char *s){
-	uint8_t value = 0;
-	/*while(*s == '0'){
-		s++;
-	}*/
-	while(*s){
-		value += (*s - 0x30);
-		s++;
-		if (*s){
-			value *= 10;
+		void EEPROM_write(unsigned char addr, unsigned char data){
+			cli();
+			while(EECR & (1<<EEWE));
+			EECR = (0<<EEPM1)|(0>>EEPM0);
+			EEARL = addr;
+			EEDR = data;
+			EECR |= (1<<EEMWE);
+			EECR |= (1<<EEWE);
+			sei();
 		}
-	};
-	return value;
-}
+		uint8_t EEPROM_read(unsigned char addr){
+			while(EECR & (1<<EEWE));
+			EEARL = addr;
+			EECR |= (1<<EERE);
+			return EEDR;
+		}
+
         ISR(TIM0_COMPA_vect){
 	        TXPORT = (TXPORT & ~(1 << TXD)) | ((txbyte & 0x01) << TXD); // Выставляем в бит TXD младший бит txbyte
 	        txbyte = (txbyte >> 0x01) + 0x8000;							// Двигаем txbyte вправо на 1 и пишем 1 в старший разряд (0x8000)
@@ -49,10 +52,9 @@ uint8_t PARS_StrToUchar(char *s){
 				buf_R = R; //значения длительности ШИМ
 				buf_G = G;
 				buf_B = B;
-				//PORTB |= (1<<PINB2) | (1<<PINB3) | (1<<PINB4); //подаем 1 на все каналы
-				if (R != 0){PORTB |= (1<<PINB2);}
-					if (G != 0){PORTB |= (1<<PINB4);}
-						if (B != 0){PORTB |= (1<<PINB3);}
+				if (buf_R > 0){PORTB |= (1<<PINB2);}
+				if (buf_G > 0){PORTB |= (1<<PINB4);}
+				if (buf_B > 0){PORTB |= (1<<PINB3);}
 			}	
 			if (cnt == buf_R) PORTB &=~(1<<PINB2); //подаем 0 на канал
 			if (cnt == buf_G) PORTB &=~(1<<PINB4); //по достижении
@@ -120,18 +122,36 @@ uint8_t PARS_StrToUchar(char *s){
 	        GIMSK |= (1 << INT0);		// Разрешаем прерывание INT0
 	        sei();						// Разрешаем прерывания глобально
         }
-
+uint8_t PARS_StrToUchar(char *s){
+	uint8_t value = 0;
+	/*while(*s == '0'){
+		s++;
+	}*/
+	while(*s){
+		value += (*s - 0x30);
+		s++;
+		if (*s){
+			value *= 10;
+		}
+	};
+	return value;
+}
 int main(void) {
+	wdt_enable(WDTO_1S);
 	DDRB = (1<<PINB2) | (1<<PINB3) | (1<<PINB4); //Порты 2, 3 и 4 на выход
 	uint8_t b = 0;
 	char sym;
-	R = 0; //начальные значения
-	G = 0; //длительности ШИМ
-	B = 0; //трёх каналов
-	PARS_Init();
+	R = EEPROM_read(R_ADRR); //начальные значения
+	G = EEPROM_read(G_ADRR); //длительности ШИМ
+	B = EEPROM_read(B_ADRR); //трёх каналов
+	argc = 0;
+	argv[0] = buf;
+	flag = FALSE;
+	i = 0;
 	uart_init(); //Инициализация UART
 	
 while (1) {
+	wdt_reset();
 	if (uart_recieve(&b) >= 0){
 		//uart_send(b);
 		sym = b;
@@ -163,10 +183,21 @@ while (1) {
 			} else {
 			buf[i] = 0;
 			if (argc){
-				if (PARS_StrToUchar(argv[0]) == ADDRESS || PARS_StrToUchar(argv[0]) == 99){
-					R = PARS_StrToUchar(argv[1]);
-					G = PARS_StrToUchar(argv[2]);
-					B = PARS_StrToUchar(argv[3]);
+				uint8_t cmd = PARS_StrToUchar(argv[0]);
+				uint8_t pR = PARS_StrToUchar(argv[1]);
+				uint8_t pG = PARS_StrToUchar(argv[2]);
+				uint8_t pB = PARS_StrToUchar(argv[3]);
+				if (cmd == ADDRESS || cmd == 99){
+					R = pR;
+					G = pG;
+					B = pB;
+				} else if (cmd == SAVE){
+					EEPROM_write(R_ADRR, pR);
+					EEPROM_write(G_ADRR, pG);
+					EEPROM_write(B_ADRR, pB);
+					R = pR;
+					G = pG;
+					B = pB;
 				}
 			}
 			argc = 0;
