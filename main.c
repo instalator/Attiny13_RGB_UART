@@ -24,7 +24,7 @@
 *	BAUD_DIV = (9 600 000 / 8) / 9600 = 125 (0x7D).
 */
 //#define T_DIV		0x01	// DIV = 1
-#define T_DIV		0x02	// DIV = 8
+#define T_DIV			0x02	// DIV = 8
 //#define T_DIV		0x03	// DIV = 64
 #define BAUD_DIV	0x3E	// Скорость = 9600 бод. 7D / 19200 3E
 
