@@ -5,16 +5,41 @@
 #define F_CPU 9600000
 #include <avr/eeprom.h>
 #include  <avr/wdt.h>
-#include "uart13.h"
+#include <avr/io.h>
+#include <avr/interrupt.h>
+/////////////////////////////////////////////////////////////////////////////
+#define TXPORT PORTB	// Имя порта для передачи
+#define RXPORT PINB		// Имя порта на прием
+#define TXDDR DDRB		// Регистр направления порта на передачу
+#define RXDDR DDRB		// Регистр направления порта на прием
+#define TXD PINB0		// Номер бита порта для использования на передачу
+#define RXD PINB1		// Номер бита порта для использования на прием
+/*
+*	Ниже задаются константы, определяющие скорость передачи данных (бодрейт)
+*	расчет BAUD_DIV осуществляется следующим образом:
+*	BAUD_DIV = (CPU_CLOCK / DIV) / BAUD_RATE
+*	где CPU_CLOCK - тактовая частота контроллера, BAUD_RATE - желаемая скорость UART,
+*	а DIV - значение делителя частоты таймера, задающееся в регистре TCCR0B.
+*	Например, делитель на 8, скорость порта 9600 бод:
+*	BAUD_DIV = (9 600 000 / 8) / 9600 = 125 (0x7D).
+*/
+//#define T_DIV		0x01	// DIV = 1
+#define T_DIV		0x02	// DIV = 8
+//#define T_DIV		0x03	// DIV = 64
+#define BAUD_DIV	0x3E	// Скорость = 9600 бод. 7D / 19200 3E
 
-#define R_ADRR 1
-#define G_ADRR 2
-#define B_ADRR 3
-#define SAVE 88
-#define ADDRESS 1 // Адрес устройства
-#define SIZE_RECEIVE_BUF  14
-/*количество токенов*/
-#define AMOUNT_PAR 4
+volatile uint16_t txbyte;
+volatile uint8_t rxbyte;
+volatile uint8_t txbitcount;
+volatile uint8_t rxbitcount;
+/////////////////////////////////////////////////////////////////////////////
+#define R_ADRR 1 //Ячейка EEPROM для хранения красного канала
+#define G_ADRR 2 //Ячейка EEPROM для хранения зеленого канала
+#define B_ADRR 3 //Ячейка EEPROM для хранения синего канала
+#define SAVE 88 //Команда для сохранения значений в EEPROM
+#define ADDRESS 1 // Адрес устройства, от 1 до 99 (99 команда на все устройства)
+#define SIZE_RECEIVE_BUF  14 //Размер буфера передаваемой строки
+#define AMOUNT_PAR 4 //Количество параметров в команде, для парсинга
 #define TRUE   1
 #define FALSE  0
 char buf[SIZE_RECEIVE_BUF];
@@ -25,22 +50,22 @@ uint8_t flag = 0;
 uint8_t cnt = 0;
 uint8_t R, G, B, buf_R, buf_G, buf_B;
 
-		void EEPROM_write(unsigned char addr, unsigned char data){
-			cli();
-			while(EECR & (1<<EEWE));
-			EECR = (0<<EEPM1)|(0>>EEPM0);
-			EEARL = addr;
-			EEDR = data;
-			EECR |= (1<<EEMWE);
-			EECR |= (1<<EEWE);
-			sei();
-		}
-		uint8_t EEPROM_read(unsigned char addr){
-			while(EECR & (1<<EEWE));
-			EEARL = addr;
-			EECR |= (1<<EERE);
-			return EEDR;
-		}
+	void EEPROM_write(unsigned char addr, unsigned char data){ //Функция записи в EEPROM
+		cli(); // Отключаем все прерывания
+		while(EECR & (1<<EEWE));
+		EECR = (0<<EEPM1)|(0>>EEPM0);
+		EEARL = addr;
+		EEDR = data;
+		EECR |= (1<<EEMWE);
+		EECR |= (1<<EEWE);
+		sei(); // Включаем прерывания
+	}
+	uint8_t EEPROM_read(unsigned char addr){ //Функция чтения из EEPROM
+		while(EECR & (1<<EEWE));
+		EEARL = addr;
+		EECR |= (1<<EERE);
+		return EEDR;
+	}
 
         ISR(TIM0_COMPA_vect){
 	        TXPORT = (TXPORT & ~(1 << TXD)) | ((txbyte & 0x01) << TXD); // Выставляем в бит TXD младший бит txbyte
@@ -137,7 +162,7 @@ uint8_t PARS_StrToUchar(char *s){
 	return value;
 }
 int main(void) {
-	wdt_enable(WDTO_1S);
+	wdt_enable(WDTO_1S); //Включаем Watchdog, 1 секунда
 	DDRB = (1<<PINB2) | (1<<PINB3) | (1<<PINB4); //Порты 2, 3 и 4 на выход
 	uint8_t b = 0;
 	char sym;
@@ -151,7 +176,7 @@ int main(void) {
 	uart_init(); //Инициализация UART
 	
 while (1) {
-	wdt_reset();
+	wdt_reset(); //Сброс таймера Watchdog
 	if (uart_recieve(&b) >= 0){
 		//uart_send(b);
 		sym = b;
